@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Scroblin</string>
+    <string name="accessibility_service_label">Scroblin auto-scroll</string>
+    <string name="accessibility_service_description">Displays a user-controlled floating speed knob and performs requested scrolling gestures in the foreground app. Scroblin does not collect or transmit screen content.</string>
+    <string name="position_reset_confirmation">Overlay position reset</string>
+</resources>
