@@ -3,7 +3,6 @@ package com.scroblin.app.scroll
 import android.accessibilityservice.AccessibilityService
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 
 /**
  * Adaptive scroll engine used by the accessibility service.
@@ -90,7 +89,6 @@ class GestureScrollEngine(
             nodeEngine.pause()
             touchEngine.pause()
             strategy = desiredStrategy
-            Log.d(TAG, "scroll strategy=${desiredStrategy.name}")
         }
 
         when (desiredStrategy) {
@@ -103,7 +101,6 @@ class GestureScrollEngine(
         if (!desiredRunning || stopped) return
         nodeEngine.pause()
         strategy = Strategy.TOUCH
-        Log.d(TAG, "scroll strategy=TOUCH (node fallback)")
         touchEngine.resume()
     }
 
@@ -114,9 +111,5 @@ class GestureScrollEngine(
     private enum class Strategy {
         NODE,
         TOUCH,
-    }
-
-    companion object {
-        private const val TAG = "AutoScroll"
     }
 }
