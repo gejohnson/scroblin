@@ -7,7 +7,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import com.scroblin.app.overlay.AutoScrollState
 import kotlin.math.abs
@@ -58,7 +57,6 @@ class NodeScrollEngine(
                 DispatchResult.UNAVAILABLE -> {
                     consecutiveFailures += 1
                     if (consecutiveFailures >= FAILURE_LIMIT) {
-                        Log.d(TAG, "node scrolling unavailable; switching to gesture fallback")
                         running = false
                         onUnavailable()
                         return
@@ -146,11 +144,6 @@ class NodeScrollEngine(
             putFloat(AccessibilityNodeInfo.ACTION_ARGUMENT_SCROLL_AMOUNT_FLOAT, dispatchedAmount)
         }
         val accepted = target.node.performAction(target.actionId, arguments)
-        Log.v(
-            TAG,
-            "node scroll action=${target.actionId} amount=$dispatchedAmount " +
-                "bounds=${target.bounds} accepted=$accepted",
-        )
         return if (accepted) DispatchResult.SUCCESS else DispatchResult.UNAVAILABLE
     }
 
@@ -184,9 +177,6 @@ class NodeScrollEngine(
             }
         }
 
-        if (best != null) {
-            Log.v(TAG, "granular target bounds=${best.bounds} class=${best.node.className}")
-        }
         return best
     }
 
@@ -237,7 +227,6 @@ class NodeScrollEngine(
     }
 
     companion object {
-        private const val TAG = "AutoScroll"
         private const val TICK_INTERVAL_MS = 50L
         private const val MAX_ELAPSED_MS = 150L
         private const val FAILURE_LIMIT = 2
