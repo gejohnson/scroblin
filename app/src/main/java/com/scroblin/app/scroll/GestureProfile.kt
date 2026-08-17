@@ -1,11 +1,11 @@
 package com.scroblin.app.scroll
 
 data class GestureProfile(
-    val startYFraction: Float = 0.70f,
-    val endYFraction: Float = 0.30f,
-    val minStrokeDistanceDp: Float = 48f,
-    val maxStrokeDurationMs: Long = 560L,
-    val initialEscapeDistanceDp: Float = 12f,
-    val initialEscapeDurationMs: Long = 42L,
-    val targetCycleDurationMs: Long = 300L,
+    val startYFraction: Float = 0.72f,
+    val endYFraction: Float = 0.28f,
+    val minStrokeDistanceDp: Float = 4f,
+    val maxStrokeDurationMs: Long = 700L,
+    val initialEscapeDistanceDp: Float = 8f,
+    val initialEscapeDurationMs: Long = 30L,
+    val targetCycleDurationMs: Long = 420L,
 )
