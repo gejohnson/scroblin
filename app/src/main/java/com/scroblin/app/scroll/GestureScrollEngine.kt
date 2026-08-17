@@ -4,11 +4,13 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.graphics.PointF
+import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
+import android.view.accessibility.AccessibilityNodeInfo
 import com.scroblin.app.overlay.AutoScrollState
 import kotlin.math.abs
 import kotlin.math.max
@@ -87,7 +89,8 @@ class GestureScrollEngine(
         syntheticGestureInFlight = true
         Log.d(
             TAG,
-            "synthetic gesture start step=$speedStep target=${geometry.targetPixelsPerSecond.toInt()}px/s",
+            "synthetic gesture start step=$speedStep target=${geometry.targetPixelsPerSecond.toInt()}px/s " +
+                "bounds=${geometry.targetBounds}",
         )
 
         val primePath = Path().apply {
@@ -143,17 +146,17 @@ class GestureScrollEngine(
             steadyPath,
             0L,
             duration,
-            false,
+            shouldContinueScrolling,
         )
 
         val dispatched = service.dispatchGesture(
             GestureDescription.Builder().addStroke(continuation).build(),
             object : AccessibilityService.GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) {
-                    syntheticGestureInFlight = false
-                    Log.d(TAG, "synthetic gesture completed")
-                    if (running && !stopped && speedStep != 0) {
-                        dispatchScrollCycle()
+                    if (shouldContinueScrolling) {
+                        dispatchBrake(continuation, geometry)
+                    } else {
+                        finishCompletedCycle()
                     }
                 }
 
@@ -166,6 +169,56 @@ class GestureScrollEngine(
 
         if (!dispatched) {
             finishCancelled("continuation rejected")
+        }
+    }
+
+    /**
+     * Finish each swipe at very low velocity so the target app sees a drag stop,
+     * rather than a high-velocity finger lift that can turn into an app-defined fling.
+     */
+    private fun dispatchBrake(
+        steadyStroke: GestureDescription.StrokeDescription,
+        geometry: ScrollGeometry,
+    ) {
+        val brakeEnd = PointF(
+            geometry.end.x,
+            geometry.end.y + geometry.direction * BRAKE_DISTANCE_PX,
+        )
+        val brakePath = Path().apply {
+            moveTo(geometry.end.x, geometry.end.y)
+            lineTo(brakeEnd.x, brakeEnd.y)
+        }
+        val brakeStroke = steadyStroke.continueStroke(
+            brakePath,
+            0L,
+            BRAKE_DURATION_MS,
+            false,
+        )
+
+        val dispatched = service.dispatchGesture(
+            GestureDescription.Builder().addStroke(brakeStroke).build(),
+            object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    finishCompletedCycle()
+                }
+
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    finishCancelled("brake cancelled")
+                }
+            },
+            mainHandler,
+        )
+
+        if (!dispatched) {
+            finishCancelled("brake rejected")
+        }
+    }
+
+    private fun finishCompletedCycle() {
+        syntheticGestureInFlight = false
+        Log.v(TAG, "synthetic gesture completed")
+        if (running && !stopped && speedStep != 0) {
+            dispatchScrollCycle()
         }
     }
 
@@ -183,17 +236,21 @@ class GestureScrollEngine(
         val metrics = currentDisplayMetrics()
         if (metrics.widthPixels <= 0 || metrics.heightPixels <= 0) return null
 
+        val screenBounds = Rect(0, 0, metrics.widthPixels, metrics.heightPixels)
+        val targetBounds = findBestScrollableBounds(screenBounds) ?: screenBounds
+        if (targetBounds.width() <= 1 || targetBounds.height() <= 1) return null
+
         val direction = if (speedStep > 0) -1f else 1f
-        val x = metrics.widthPixels * 0.5f
+        val x = targetBounds.exactCenterX()
         val startY = if (direction < 0f) {
-            metrics.heightPixels * profile.startYFraction
+            targetBounds.top + targetBounds.height() * profile.startYFraction
         } else {
-            metrics.heightPixels * profile.endYFraction
+            targetBounds.top + targetBounds.height() * profile.endYFraction
         }
         val limitY = if (direction < 0f) {
-            metrics.heightPixels * profile.endYFraction
+            targetBounds.top + targetBounds.height() * profile.endYFraction
         } else {
-            metrics.heightPixels * profile.startYFraction
+            targetBounds.top + targetBounds.height() * profile.startYFraction
         }
         val escapeDistance = profile.initialEscapeDistanceDp * metrics.density
         val escapedY = startY + direction * escapeDistance
@@ -215,7 +272,53 @@ class GestureScrollEngine(
             direction = direction,
             durationMs = durationMs,
             targetPixelsPerSecond = targetPixelsPerSecond,
+            targetBounds = targetBounds,
         )
+    }
+
+    /**
+     * Prefer the largest visible node that exposes vertical accessibility scroll
+     * actions. This puts the fallback gesture inside the actual feed/list rather
+     * than blindly swiping the physical center of the display.
+     */
+    private fun findBestScrollableBounds(screenBounds: Rect): Rect? {
+        val root = service.rootInActiveWindow ?: return null
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var bestBounds: Rect? = null
+        var bestScore = 0L
+        var visited = 0
+
+        while (queue.isNotEmpty() && visited < MAX_TREE_NODES) {
+            val node = queue.removeFirst()
+            visited += 1
+
+            if (node.isVisibleToUser && hasVerticalScrollAction(node)) {
+                val bounds = Rect().also(node::getBoundsInScreen)
+                if (bounds.intersect(screenBounds) && bounds.width() > 0 && bounds.height() > 0) {
+                    val area = bounds.width().toLong() * bounds.height().toLong()
+                    val score = area + if (node.isScrollable) SCROLLABLE_BONUS else 0L
+                    if (score > bestScore) {
+                        bestScore = score
+                        bestBounds = Rect(bounds)
+                    }
+                }
+            }
+
+            for (index in 0 until node.childCount) {
+                node.getChild(index)?.let(queue::addLast)
+            }
+        }
+
+        return bestBounds
+    }
+
+    private fun hasVerticalScrollAction(node: AccessibilityNodeInfo): Boolean {
+        val ids = node.actionList.asSequence().map { it.id }.toSet()
+        return AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD.id in ids ||
+            AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD.id in ids ||
+            AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_DOWN.id in ids ||
+            AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.id in ids
     }
 
     private fun targetPixelsPerSecond(): Float {
@@ -254,6 +357,7 @@ class GestureScrollEngine(
         val direction: Float,
         val durationMs: Long,
         val targetPixelsPerSecond: Float,
+        val targetBounds: Rect,
     )
 
     companion object {
@@ -261,5 +365,9 @@ class GestureScrollEngine(
         private const val MINIMUM_STROKE_DURATION_MS = 80L
         private const val RELEASE_DURATION_MS = 10L
         private const val RELEASE_DISTANCE_PX = 1f
+        private const val BRAKE_DURATION_MS = 90L
+        private const val BRAKE_DISTANCE_PX = 1f
+        private const val MAX_TREE_NODES = 500
+        private const val SCROLLABLE_BONUS = 1_000_000_000L
     }
 }
