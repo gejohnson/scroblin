@@ -8,7 +8,6 @@ import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
-import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityNodeInfo
 import com.scroblin.app.overlay.AutoScrollState
@@ -87,11 +86,6 @@ class TouchGestureScrollEngine(
         }
 
         syntheticGestureInFlight = true
-        Log.d(
-            TAG,
-            "synthetic gesture start step=$speedStep target=${geometry.targetPixelsPerSecond.toInt()}px/s " +
-                "bounds=${geometry.targetBounds}",
-        )
 
         val primePath = Path().apply {
             moveTo(geometry.start.x, geometry.start.y)
@@ -112,14 +106,14 @@ class TouchGestureScrollEngine(
                 }
 
                 override fun onCancelled(gestureDescription: GestureDescription?) {
-                    finishCancelled("prime cancelled")
+                    finishCancelled()
                 }
             },
             mainHandler,
         )
 
         if (!dispatched) {
-            finishCancelled("prime rejected")
+            finishCancelled()
         }
     }
 
@@ -161,14 +155,14 @@ class TouchGestureScrollEngine(
                 }
 
                 override fun onCancelled(gestureDescription: GestureDescription?) {
-                    finishCancelled("continuation cancelled")
+                    finishCancelled()
                 }
             },
             mainHandler,
         )
 
         if (!dispatched) {
-            finishCancelled("continuation rejected")
+            finishCancelled()
         }
     }
 
@@ -199,30 +193,28 @@ class TouchGestureScrollEngine(
                 }
 
                 override fun onCancelled(gestureDescription: GestureDescription?) {
-                    finishCancelled("brake cancelled")
+                    finishCancelled()
                 }
             },
             mainHandler,
         )
 
         if (!dispatched) {
-            finishCancelled("brake rejected")
+            finishCancelled()
         }
     }
 
     private fun finishCompletedCycle() {
         syntheticGestureInFlight = false
-        Log.v(TAG, "synthetic gesture completed")
         if (running && !stopped && speedStep != 0) {
             dispatchScrollCycle()
         }
     }
 
-    private fun finishCancelled(reason: String) {
+    private fun finishCancelled() {
         val wasRunning = running
         syntheticGestureInFlight = false
         running = false
-        Log.d(TAG, "synthetic gesture stopped: $reason")
         if (wasRunning && !stopped) {
             onGestureCancelled()
         }
@@ -267,8 +259,6 @@ class TouchGestureScrollEngine(
             end = PointF(x, escapedY + direction * distance),
             direction = direction,
             durationMs = durationMs,
-            targetPixelsPerSecond = targetPixelsPerSecond,
-            targetBounds = targetBounds,
         )
     }
 
@@ -347,12 +337,9 @@ class TouchGestureScrollEngine(
         val end: PointF,
         val direction: Float,
         val durationMs: Long,
-        val targetPixelsPerSecond: Float,
-        val targetBounds: Rect,
     )
 
     companion object {
-        private const val TAG = "AutoScroll"
         private const val MINIMUM_STROKE_DURATION_MS = 80L
         private const val RELEASE_DURATION_MS = 10L
         private const val RELEASE_DISTANCE_PX = 1f
