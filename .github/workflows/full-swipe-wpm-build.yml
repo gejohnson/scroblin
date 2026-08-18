@@ -22,7 +22,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply experiment patch
-        run: python tools/apply_full_swipe_wpm_experiment.py
+        run: |
+          python tools/apply_full_swipe_wpm_experiment.py
+          python tools/apply_full_swipe_precision.py
 
       - name: Commit generated experiment source
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
