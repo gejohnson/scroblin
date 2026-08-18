@@ -82,6 +82,7 @@ import com.scroblin.app.accessibility.AutoScrollAccessibilityService
 import com.scroblin.app.overlay.OverlayFace
 import com.scroblin.app.overlay.SpeedKnobListener
 import com.scroblin.app.overlay.SpeedKnobView
+import com.scroblin.app.scroll.WpmSpeedModel
 import com.scroblin.app.settings.AppVisibilityTracker
 import com.scroblin.app.settings.AutoScrollSettings
 import com.scroblin.app.settings.HueWheelView
@@ -437,7 +438,16 @@ private fun PreviewCard(
     onPreviewSpeedStepChanged: (Int) -> Unit,
     onPreviewInteraction: () -> Unit,
 ) {
-    val previewPixelsPerSecond = previewSpeedStep * settings.pixelsPerNotch
+    val screenHeightPixels = LocalResources.current.displayMetrics.heightPixels
+    val previewPixelsPerSecond = WpmSpeedModel.targetPixelsPerSecond(
+        step = previewSpeedStep,
+        maxWpm = settings.pixelsPerNotch,
+        screenHeightPixels = screenHeightPixels,
+    )
+    val previewWpm = WpmSpeedModel.estimatedWpm(
+        step = previewSpeedStep,
+        maxWpm = settings.pixelsPerNotch,
+    )
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -454,6 +464,7 @@ private fun PreviewCard(
             PreviewSpeedKnob(
                 speedStep = previewSpeedStep,
                 pixelsPerSecond = previewPixelsPerSecond,
+                estimatedWpm = previewWpm,
                 playing = previewPlaying,
                 settings = settings,
                 displayHue = colorPreviewHue,
@@ -476,6 +487,7 @@ private fun PreviewCard(
 private fun PreviewSpeedKnob(
     speedStep: Int,
     pixelsPerSecond: Float,
+    estimatedWpm: Float,
     playing: Boolean,
     settings: AutoScrollSettings,
     displayHue: Float,
@@ -522,7 +534,7 @@ private fun PreviewSpeedKnob(
             )
         }
         Text(
-            text = "${pixelsPerSecond.roundToInt()} px/s",
+            text = "${kotlin.math.abs(estimatedWpm).roundToInt()} WPM",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -665,13 +677,13 @@ private fun CompactScrollLabCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SettingKnob(
-                    label = "Rate",
-                    valueText = "${settings.pixelsPerNotch.roundToInt()} px/tick",
+                    label = "Max",
+                    valueText = "${settings.pixelsPerNotch.roundToInt()} WPM",
                     value = settings.pixelsPerNotch,
                     minimumValue = SettingsRepository.PIXELS_PER_NOTCH_RANGE.start,
                     maximumValue = SettingsRepository.PIXELS_PER_NOTCH_RANGE.endInclusive,
                     stepSize = SettingsRepository.PIXELS_PER_NOTCH_STEP,
-                    visualNotchCount = 20,
+                    visualNotchCount = 23,
                     fillColor = controlFillColor,
                     hapticEnabled = settings.hapticEnabled,
                     onValueChanged = onPixelsPerNotchChanged,

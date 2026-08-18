@@ -3,6 +3,7 @@ package com.scroblin.app.scroll
 import android.accessibilityservice.AccessibilityService
 import android.os.Handler
 import android.os.Looper
+import kotlin.math.abs
 
 /**
  * Adaptive scroll engine used by the accessibility service.
@@ -12,7 +13,7 @@ import android.os.Looper
  * touch gestures targeted at the largest visible scrollable node.
  */
 class GestureScrollEngine(
-    service: AccessibilityService,
+    private val service: AccessibilityService,
     onGestureCancelled: () -> Unit,
 ) : ScrollEngine {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -25,7 +26,7 @@ class GestureScrollEngine(
     }
 
     private var speedStep = 0
-    private var pixelsPerNotch = 0f
+    private var maxWpm = 0f
     private var desiredRunning = false
     private var stopped = false
     private var strategy: Strategy? = null
@@ -38,23 +39,24 @@ class GestureScrollEngine(
             speedStep = step
             nodeEngine.setSpeedStep(step)
             touchEngine.setSpeedStep(step)
+            updateChildSpeedScale()
             if (desiredRunning) chooseStrategyAndResume()
         }
     }
 
     override fun updatePixelsPerNotch(pixelsPerNotch: Float) {
         runOnMain {
-            this.pixelsPerNotch = pixelsPerNotch
-            nodeEngine.updatePixelsPerNotch(pixelsPerNotch)
-            touchEngine.updatePixelsPerNotch(pixelsPerNotch)
+            maxWpm = pixelsPerNotch.coerceAtLeast(0f)
+            updateChildSpeedScale()
             if (desiredRunning) chooseStrategyAndResume()
         }
     }
 
     override fun resume() {
         runOnMain {
-            if (stopped || speedStep == 0 || pixelsPerNotch <= 0f) return@runOnMain
+            if (stopped || speedStep == 0 || maxWpm <= 0f) return@runOnMain
             desiredRunning = true
+            updateChildSpeedScale()
             chooseStrategyAndResume()
         }
     }
@@ -77,7 +79,7 @@ class GestureScrollEngine(
     }
 
     private fun chooseStrategyAndResume() {
-        if (!desiredRunning || stopped || speedStep == 0 || pixelsPerNotch <= 0f) return
+        if (!desiredRunning || stopped || speedStep == 0 || maxWpm <= 0f) return
 
         val desiredStrategy = if (nodeEngine.canHandleCurrentWindow()) {
             Strategy.NODE
@@ -102,6 +104,24 @@ class GestureScrollEngine(
         nodeEngine.pause()
         strategy = Strategy.TOUCH
         touchEngine.resume()
+    }
+
+    private fun updateChildSpeedScale() {
+        val magnitude = abs(speedStep)
+        val targetPixelsPerSecond = abs(
+            WpmSpeedModel.targetPixelsPerSecond(
+                step = speedStep,
+                maxWpm = maxWpm,
+                screenHeightPixels = service.resources.displayMetrics.heightPixels,
+            ),
+        )
+        val effectivePixelsPerNotch = if (magnitude > 0) {
+            targetPixelsPerSecond / magnitude
+        } else {
+            0f
+        }
+        nodeEngine.updatePixelsPerNotch(effectivePixelsPerNotch)
+        touchEngine.updatePixelsPerNotch(effectivePixelsPerNotch)
     }
 
     private fun runOnMain(block: () -> Unit) {

@@ -1,0 +1,88 @@
+name: Full-swipe curved knob test build
+
+on:
+  push:
+    branches:
+      - ui/full-swipe-curved-knob
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply experiment patch
+        run: |
+          python tools/apply_full_swipe_wpm_experiment.py
+          python tools/apply_full_swipe_precision.py
+
+      - name: Commit generated experiment source
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: |
+          if git diff --quiet; then
+            echo "Experiment source already committed."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/scroblin/app/MainActivity.kt \
+                  app/src/main/java/com/scroblin/app/settings/SettingsRepository.kt \
+                  app/src/main/java/com/scroblin/app/scroll/GestureScrollEngine.kt \
+                  app/src/main/java/com/scroblin/app/overlay/SpeedKnobView.kt
+          git commit -m "Apply full-swipe curved knob experiment"
+          git push origin HEAD:ui/full-swipe-curved-knob
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android API 36
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Build debug APK
+        id: build
+        continue-on-error: true
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Upload debug APK
+        if: steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: scroblin-full-swipe-curved-knob-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Report build result to PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          PR_NUMBER=$(gh pr list --head "${GITHUB_REF_NAME}" --state open --json number --jq '.[0].number')
+          if [ -z "$PR_NUMBER" ]; then
+            exit 0
+          fi
+          if [ "$BUILD_OUTCOME" = "success" ]; then
+            gh pr comment "$PR_NUMBER" --body "Full-swipe curved-knob CI build succeeded. Run ID: ${GITHUB_RUN_ID}. Artifact: scroblin-full-swipe-curved-knob-debug"
+          else
+            gh pr comment "$PR_NUMBER" --body "Full-swipe curved-knob CI build failed. Run ID: ${GITHUB_RUN_ID}."
+          fi
+
+      - name: Fail workflow when Gradle fails
+        if: steps.build.outcome != 'success'
+        run: exit 1
