@@ -1,0 +1,11 @@
+Onscreen Controls by Kenney Vleugels (www.kenney.nl)
+
+License: CC0 1.0 Universal
+https://creativecommons.org/publicdomain/zero/1.0/
+
+You may use these graphics in personal and commercial projects.
+Credit (Kenney or www.kenney.nl) would be nice but is not mandatory.
+
+Scroblin uses an Android-vector adaptation of the shadedDark analog-control artwork from Kenney's Onscreen Controls pack.
+Source mirror used during development:
+https://github.com/ETdoFresh/kenney.nl/tree/master/onscreencontrols

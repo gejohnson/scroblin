@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Analog-stick cap adapted from Kenney's CC0 Onscreen Controls "shadedDark" asset.
+    Source: https://github.com/ETdoFresh/kenney.nl/tree/master/onscreencontrols
+    License copy: res/raw/kenney_onscreen_controls_license.txt
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="100dp"
+    android:height="100dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+
+    <path
+        android:fillColor="#242424"
+        android:pathData="M50,1 C77.06,1 99,22.94 99,50 C99,77.06 77.06,99 50,99 C22.94,99 1,77.06 1,50 C1,22.94 22.94,1 50,1 Z" />
+
+    <path
+        android:fillColor="#585858"
+        android:pathData="M50,4 C75.41,4 96,24.59 96,50 C96,75.41 75.41,96 50,96 C24.59,96 4,75.41 4,50 C4,24.59 24.59,4 50,4 Z" />
+
+    <path
+        android:fillColor="#383838"
+        android:pathData="M50,9 C72.64,9 91,27.36 91,50 C91,72.64 72.64,91 50,91 C27.36,91 9,72.64 9,50 C9,27.36 27.36,9 50,9 Z" />
+
+    <path
+        android:fillColor="#18FFFFFF"
+        android:pathData="M19,42 C22,24 34,14 50,13 C65,13 77,21 82,34 C72,27 61,23 49,23 C36,23 26,29 19,42 Z" />
+
+    <path
+        android:fillColor="#2A000000"
+        android:pathData="M18,62 C27,74 38,80 51,80 C63,80 74,75 82,65 C76,81 64,89 49,89 C34,89 23,80 18,62 Z" />
+</vector>

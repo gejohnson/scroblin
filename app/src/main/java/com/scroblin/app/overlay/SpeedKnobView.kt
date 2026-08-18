@@ -7,32 +7,41 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.RadialGradient
 import android.graphics.RectF
-import android.graphics.Shader
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.AttributeSet
+import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
-import android.view.animation.PathInterpolator
+import com.scroblin.app.R
 import com.scroblin.app.overlay.AutoScrollState.Companion.MAX_SPEED_STEP
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
-import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sign
 import kotlin.math.sin
 
+/**
+ * Floating auto-scroll control.
+ *
+ * The speed control is an analog-stick interaction: one vertical throw selects
+ * the complete signed speed range, quantized to the same 40 discrete notches as
+ * the neon ring. The physical stick recenters on release while the selected
+ * speed remains visible on the ring.
+ *
+ * The stick cap artwork is adapted from Kenney's CC0 Onscreen Controls
+ * "shadedDark" game-control asset. See res/raw/kenney_onscreen_controls_license.txt.
+ */
 class SpeedKnobView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -42,40 +51,18 @@ class SpeedKnobView @JvmOverloads constructor(
 
     private val density = resources.displayMetrics.density
     private val handler = Handler(Looper.getMainLooper())
+    private val windowManager = context.getSystemService(WindowManager::class.java)
     private val ringBounds = RectF(23.5f, 23.5f, 116.5f, 116.5f)
-    private val gearPath = buildGearPath()
+    private val joystickCap: Drawable? = context.getDrawable(R.drawable.kenney_joystick_cap)
 
-    private val knobBodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val shellPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
-        shader = RadialGradient(
-            47.6f,
-            39.2f,
-            78f,
-            intArrayOf(Color.rgb(88, 98, 116), Color.rgb(59, 68, 84), Color.rgb(35, 42, 53)),
-            floatArrayOf(0f, 0.38f, 1f),
-            Shader.TileMode.CLAMP,
-        )
+        color = Color.rgb(35, 42, 53)
     }
-    private val knobBodyStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val shellHighlightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 1f
-        color = Color.argb(26, 255, 255, 255)
-    }
-    private val knobInnerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        shader = RadialGradient(
-            50.4f,
-            42f,
-            52f,
-            intArrayOf(Color.rgb(68, 78, 96), Color.rgb(48, 56, 70), Color.rgb(34, 41, 52)),
-            floatArrayOf(0f, 0.50f, 1f),
-            Shader.TileMode.CLAMP,
-        )
-    }
-    private val knobInnerStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 1f
-        color = Color.argb(16, 255, 255, 255)
+        color = Color.argb(28, 255, 255, 255)
     }
     private val ringTrackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -109,6 +96,25 @@ class SpeedKnobView @JvmOverloads constructor(
         strokeWidth = 1.1f
         color = Color.argb(107, 0, 0, 0)
     }
+    private val stickWellPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.rgb(22, 27, 35)
+    }
+    private val stickWellLipPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.5f
+        color = Color.argb(60, 190, 200, 215)
+    }
+    private val stickStemPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 10f
+        strokeCap = Paint.Cap.ROUND
+        color = Color.rgb(44, 49, 57)
+    }
+    private val stickShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(88, 0, 0, 0)
+    }
     private val unavailableEngravingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeWidth = 4.6f
@@ -121,85 +127,65 @@ class SpeedKnobView @JvmOverloads constructor(
         strokeCap = Paint.Cap.ROUND
         color = Color.argb(112, 228, 233, 240)
     }
-    private val gearPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        shader = LinearGradient(
-            28f,
-            25f,
-            112f,
-            115f,
-            intArrayOf(Color.rgb(192, 199, 209), Color.rgb(146, 155, 168), Color.rgb(105, 115, 129)),
-            floatArrayOf(0f, 0.48f, 1f),
-            Shader.TileMode.CLAMP,
-        )
-    }
-    private val gearStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 1.2f
-        strokeJoin = Paint.Join.ROUND
-        color = Color.argb(28, 255, 255, 255)
-    }
-    private val gearShadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = Color.argb(87, 12, 15, 20)
-    }
-    private val gearHolePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = Color.rgb(23, 28, 37)
-    }
-    private val gearHoleStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 1.3f
-        color = Color.argb(20, 255, 255, 255)
-    }
-    private val gearInnerRingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 7.5f
-        color = Color.argb(184, 133, 142, 156)
-    }
 
     private var logicalSpeedStep = 0
     private var visualSpeedStep = 0f
     private var paused = true
     private var unavailable = false
-    private var displayFace = OverlayFace.KNOB
     private var pickedUp = false
     private var hapticEnabled = true
     private var positiveColor = DEFAULT_POSITIVE_COLOR
     private var negativeColor = DEFAULT_NEGATIVE_COLOR
     private var ringAnimator: ValueAnimator? = null
+    private var stickReturnAnimator: ValueAnimator? = null
     private var colorPreviewAnimator: ValueAnimator? = null
     private var colorPreviewActive = false
     private var colorPreviewMix = 0f
-    private var isFlipping = false
     private var lastPausedResumeTapUptimeMs = 0L
 
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
     private var gesture = OverlayGesture.UNDECIDED
-    private var downFace = OverlayFace.KNOB
     private var startX = 0f
     private var startY = 0f
-    private var lastX = 0f
-    private var lastY = 0f
+    private var startRawX = 0f
+    private var startRawY = 0f
     private var lastRawX = 0f
     private var lastRawY = 0f
-    private var startingSpeedStep = 0
     private var moved = false
-    private val moveSlop = 11f * density
-    private val speedTravelPerStep = 16f * density
-    private val flipThresholdMaximum = 48f * density
+    private var longPressArmed = false
+    private var menuDirection = -1
+    private var menuTargetRawX = 0f
+    private var menuTargetRawY = 0f
+    private var stickVisualOffsetY = 0f
+    private var gearHintView: GearHintView? = null
+    private var gearHintParams: WindowManager.LayoutParams? = null
+
+    private val moveSlop = 7f * density
+    private val repositionJiggleDistance = 11f * density
+    private val speedThrowDistance = 96f * density
+    private val menuHintOffset = 64f * density
+    private val menuHitRadius = 25f * density
+
     private val longPressRunnable = Runnable {
         if (
             activePointerId != MotionEvent.INVALID_POINTER_ID &&
-            downFace == OverlayFace.GEAR &&
             gesture == OverlayGesture.UNDECIDED &&
-            !moved
+            !moved &&
+            !settingsControlMode
         ) {
-            gesture = OverlayGesture.MOVE
-            pickedUp = true
-            applyPickedUpVisual()
+            longPressArmed = true
+            gesture = OverlayGesture.MENU
+            menuDirection = if (
+                startRawY < resources.displayMetrics.heightPixels * TOP_EDGE_FRACTION
+            ) {
+                1
+            } else {
+                -1
+            }
+            menuTargetRawX = startRawX
+            menuTargetRawY = startRawY + menuDirection * menuHintOffset
+            showGearHint()
             emitFeedback(1)
-            listener?.onPickupStarted(lastRawX, lastRawY)
         }
     }
 
@@ -207,7 +193,7 @@ class SpeedKnobView @JvmOverloads constructor(
         isClickable = true
         isFocusable = true
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
-        contentDescription = "Auto-scroll speed control, paused"
+        contentDescription = "Auto-scroll analog speed control, paused"
     }
 
     fun renderState(
@@ -226,9 +212,6 @@ class SpeedKnobView @JvmOverloads constructor(
         this.unavailable = unavailable
         this.pickedUp = pickedUp
         isEnabled = !unavailable
-        if (!isFlipping) {
-            displayFace = face
-        }
         applyPickedUpVisual()
         updateAccessibilityDescription()
         invalidate()
@@ -264,10 +247,7 @@ class SpeedKnobView @JvmOverloads constructor(
             invalidate()
             return
         }
-        colorPreviewAnimator = ValueAnimator.ofFloat(
-            colorPreviewMix,
-            0f,
-        ).apply {
+        colorPreviewAnimator = ValueAnimator.ofFloat(colorPreviewMix, 0f).apply {
             duration = COLOR_PREVIEW_OUT_DURATION_MS
             interpolator = DecelerateInterpolator()
             addUpdateListener {
@@ -291,27 +271,19 @@ class SpeedKnobView @JvmOverloads constructor(
         val saveCount = canvas.save()
         canvas.translate((width - side) / 2f, (height - side) / 2f)
         canvas.scale(side / DESIGN_SIZE, side / DESIGN_SIZE)
-        if (unavailable) {
-            drawKnob(canvas)
-        } else {
-            when (displayFace) {
-                OverlayFace.KNOB -> drawKnob(canvas)
-                OverlayFace.GEAR -> drawGear(canvas)
-            }
-        }
+        drawAnalogControl(canvas)
         canvas.restoreToCount(saveCount)
     }
 
-    private fun drawKnob(canvas: Canvas) {
-        canvas.drawCircle(CENTER, CENTER, 57f, knobBodyPaint)
-        canvas.drawCircle(CENTER, CENTER, 57f, knobBodyStrokePaint)
+    private fun drawAnalogControl(canvas: Canvas) {
+        canvas.drawCircle(CENTER, CENTER, 57f, shellPaint)
+        canvas.drawCircle(CENTER, CENTER, 57f, shellHighlightPaint)
         canvas.drawCircle(CENTER, CENTER, RING_RADIUS, ringTrackPaint)
 
         val absoluteVisualStep = abs(visualSpeedStep)
         if (absoluteVisualStep > 0.001f) {
             val direction = visualSpeedStep.sign
-            val ringProgress =
-                absoluteVisualStep / AutoScrollState.STEPS_PER_REVOLUTION
+            val ringProgress = absoluteVisualStep / AutoScrollState.STEPS_PER_REVOLUTION
             val normalColor = when {
                 paused || unavailable -> PAUSED_COLOR
                 visualSpeedStep < 0f -> negativeColor
@@ -343,18 +315,47 @@ class SpeedKnobView @JvmOverloads constructor(
             )
         }
 
-        canvas.drawCircle(CENTER, CENTER, 34f, knobInnerPaint)
-        canvas.drawCircle(CENTER, CENTER, 34f, knobInnerStrokePaint)
-
-        if (unavailable) {
-            drawUnavailableEngraving(canvas)
-        } else {
+        if (absoluteVisualStep > 0.001f) {
             val dotAngle = START_ANGLE +
                 visualSpeedStep / AutoScrollState.STEPS_PER_REVOLUTION * 360f
             val dot = polar(31f, dotAngle)
             canvas.drawCircle(dot.first, dot.second, 3.1f, positionDotPaint)
             canvas.drawCircle(dot.first, dot.second, 3.1f, positionDotStrokePaint)
         }
+
+        canvas.drawCircle(CENTER, CENTER, 29f, stickWellPaint)
+        canvas.drawCircle(CENTER, CENTER, 29f, stickWellLipPaint)
+
+        if (unavailable) {
+            drawUnavailableEngraving(canvas)
+            return
+        }
+
+        val visualScale = width.coerceAtMost(height).toFloat() / DESIGN_SIZE
+        val designOffsetY = if (visualScale > 0f) stickVisualOffsetY / visualScale else 0f
+        val clampedDesignOffset = designOffsetY.coerceIn(-MAX_STICK_VISUAL_THROW, MAX_STICK_VISUAL_THROW)
+        val capY = CENTER + clampedDesignOffset
+
+        if (abs(clampedDesignOffset) > 0.2f) {
+            canvas.drawLine(CENTER, CENTER, CENTER, capY, stickStemPaint)
+        }
+        canvas.drawCircle(CENTER + 1.2f, capY + 3.2f, STICK_CAP_RADIUS + 1.5f, stickShadowPaint)
+        drawJoystickCap(canvas, CENTER, capY)
+    }
+
+    private fun drawJoystickCap(canvas: Canvas, centerX: Float, centerY: Float) {
+        val cap = joystickCap
+        if (cap == null) {
+            canvas.drawCircle(centerX, centerY, STICK_CAP_RADIUS, shellHighlightPaint)
+            return
+        }
+        cap.setBounds(
+            (centerX - STICK_CAP_RADIUS).roundToInt(),
+            (centerY - STICK_CAP_RADIUS).roundToInt(),
+            (centerX + STICK_CAP_RADIUS).roundToInt(),
+            (centerY + STICK_CAP_RADIUS).roundToInt(),
+        )
+        cap.draw(canvas)
     }
 
     private fun drawUnavailableEngraving(canvas: Canvas) {
@@ -364,31 +365,14 @@ class SpeedKnobView @JvmOverloads constructor(
         canvas.drawLine(83.2f, 59.2f, 59.2f, 83.2f, unavailableEngravingLipPaint)
     }
 
-    private fun drawGear(canvas: Canvas) {
-        val shadowSaveCount = canvas.save()
-        canvas.translate(0f, 4f)
-        canvas.drawPath(gearPath, gearShadowPaint)
-        canvas.restoreToCount(shadowSaveCount)
-
-        canvas.drawPath(gearPath, gearPaint)
-        canvas.drawPath(gearPath, gearStrokePaint)
-        canvas.drawCircle(CENTER, CENTER, 28f, gearInnerRingPaint)
-        canvas.drawCircle(CENTER, CENTER, 21f, gearHolePaint)
-        canvas.drawCircle(CENTER, CENTER, 21f, gearHoleStrokePaint)
-    }
-
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
-            val generatedByAccessibility =
-                event.flags and ACCESSIBILITY_EVENT_FLAG != 0
-            if (!generatedByAccessibility) {
-                listener?.onOutsideTouch()
-            }
+            val generatedByAccessibility = event.flags and ACCESSIBILITY_EVENT_FLAG != 0
+            if (!generatedByAccessibility) listener?.onOutsideTouch()
             return true
         }
-
-        if (!isEnabled || isFlipping) return false
+        if (!isEnabled) return false
 
         return when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> beginGesture(event)
@@ -403,18 +387,19 @@ class SpeedKnobView @JvmOverloads constructor(
         activePointerId = event.getPointerId(0)
         startX = event.x
         startY = event.y
-        lastX = startX
-        lastY = startY
-        lastRawX = event.rawX
-        lastRawY = event.rawY
-        startingSpeedStep = logicalSpeedStep
-        downFace = displayFace
+        startRawX = event.rawX
+        startRawY = event.rawY
+        lastRawX = startRawX
+        lastRawY = startRawY
         gesture = OverlayGesture.UNDECIDED
         moved = false
+        longPressArmed = false
+        stickReturnAnimator?.cancel()
+        stickVisualOffsetY = 0f
 
         parent?.requestDisallowInterceptTouchEvent(true)
         listener?.onOverlayTouchStarted()
-        if (downFace == OverlayFace.GEAR) {
+        if (!settingsControlMode) {
             handler.postDelayed(longPressRunnable, LONG_PRESS_DURATION_MS)
         }
         return true
@@ -424,94 +409,84 @@ class SpeedKnobView @JvmOverloads constructor(
         val index = event.findPointerIndex(activePointerId)
         if (index < 0) return false
 
-        val rawOffsetX = event.rawX - event.x
-        val rawOffsetY = event.rawY - event.y
         val x = event.getX(index)
         val y = event.getY(index)
+        val rawOffsetX = event.rawX - event.x
+        val rawOffsetY = event.rawY - event.y
         val rawX = x + rawOffsetX
         val rawY = y + rawOffsetY
         val dx = x - startX
         val dy = y - startY
-        val absoluteX = abs(dx)
-        val absoluteY = abs(dy)
+        val rawDx = rawX - startRawX
+        val rawDy = rawY - startRawY
+        val distance = hypot(dx, dy)
 
-        lastX = x
-        lastY = y
         lastRawX = rawX
         lastRawY = rawY
-        if (hypot(dx, dy) > moveSlop) moved = true
 
-        when (downFace) {
-            OverlayFace.KNOB -> moveKnobGesture(dx, dy, absoluteX, absoluteY)
-            OverlayFace.GEAR -> moveGearGesture(dx, dy, absoluteX, absoluteY, rawX, rawY)
+        when (gesture) {
+            OverlayGesture.MENU -> moveMenuGesture(rawX, rawY, rawDx, rawDy)
+            OverlayGesture.MOVE -> listener?.onPositionDragged(rawX, rawY)
+            OverlayGesture.SPEED -> updateSpeedFromThrow(dy)
+            OverlayGesture.CANCELLED -> Unit
+            else -> {
+                if (distance > moveSlop) {
+                    moved = true
+                    handler.removeCallbacks(longPressRunnable)
+                    gesture = OverlayGesture.SPEED
+                    updateSpeedFromThrow(dy)
+                }
+            }
         }
         return true
     }
 
-    private fun moveKnobGesture(
-        dx: Float,
-        dy: Float,
-        absoluteX: Float,
-        absoluteY: Float,
-    ) {
-        if (gesture == OverlayGesture.UNDECIDED && max(absoluteX, absoluteY) > moveSlop) {
-            gesture = if (!settingsControlMode && absoluteX > absoluteY * HORIZONTAL_DOMINANCE) {
-                OverlayGesture.FLIP
-            } else {
-                OverlayGesture.SPEED
-            }
-        }
+    private fun updateSpeedFromThrow(dy: Float) {
+        moved = true
+        val normalized = (-dy / speedThrowDistance).coerceIn(-1f, 1f)
+        val nextStep = (normalized * MAX_SPEED_STEP).roundToInt()
+            .coerceIn(-MAX_SPEED_STEP, MAX_SPEED_STEP)
+        stickVisualOffsetY = (-normalized * MAX_STICK_VISUAL_THROW * currentDesignScale())
+        invalidate()
 
-        when (gesture) {
-            OverlayGesture.SPEED -> {
-                val deltaSteps = (-dy / speedTravelPerStep).roundToInt()
-                val nextStep = (startingSpeedStep + deltaSteps)
-                    .coerceIn(-MAX_SPEED_STEP, MAX_SPEED_STEP)
-                if (nextStep != logicalSpeedStep) {
-                    val crossedSteps = abs(nextStep - logicalSpeedStep)
-                    logicalSpeedStep = nextStep
-                    paused = false
-                    animateRingTo(nextStep.toFloat())
-                    emitFeedback(crossedSteps)
-                    listener?.onSpeedStepChanged(nextStep)
-                    updateAccessibilityDescription()
-                }
-            }
-
-            OverlayGesture.FLIP -> {
-                val progress = (abs(dx) / flipThreshold()).coerceIn(0f, 1f)
-                rotationY = -dx.sign * progress * 90f
-            }
-
-            else -> Unit
+        if (nextStep != logicalSpeedStep) {
+            val crossedSteps = abs(nextStep - logicalSpeedStep)
+            logicalSpeedStep = nextStep
+            paused = false
+            animateRingTo(nextStep.toFloat())
+            emitFeedback(crossedSteps)
+            listener?.onSpeedStepChanged(nextStep)
+            updateAccessibilityDescription()
         }
     }
 
-    private fun moveGearGesture(
-        dx: Float,
-        dy: Float,
-        absoluteX: Float,
-        absoluteY: Float,
+    private fun moveMenuGesture(
         rawX: Float,
         rawY: Float,
+        rawDx: Float,
+        rawDy: Float,
     ) {
-        if (gesture == OverlayGesture.UNDECIDED && hypot(dx, dy) > moveSlop) {
-            handler.removeCallbacks(longPressRunnable)
-            gesture = if (absoluteX > absoluteY * HORIZONTAL_DOMINANCE) {
-                OverlayGesture.FLIP
-            } else {
-                OverlayGesture.CANCELLED
-            }
+        moved = true
+        if (hypot(rawX - menuTargetRawX, rawY - menuTargetRawY) <= menuHitRadius) {
+            dismissGearHint()
+            emitFeedback(1)
+            gesture = OverlayGesture.CANCELLED
+            listener?.onGearTapped()
+            return
         }
 
-        when (gesture) {
-            OverlayGesture.FLIP -> {
-                val progress = (abs(dx) / flipThreshold()).coerceIn(0f, 1f)
-                rotationY = -dx.sign * progress * 90f
-            }
+        val travel = hypot(rawDx, rawDy)
+        val signedMenuTravel = rawDy * menuDirection
+        val movingTowardMenu = signedMenuTravel > 0f && abs(rawDy) >= abs(rawDx) * MENU_DIRECTION_BIAS
 
-            OverlayGesture.MOVE -> listener?.onPositionDragged(rawX, rawY)
-            else -> Unit
+        if (travel >= repositionJiggleDistance && !movingTowardMenu) {
+            dismissGearHint()
+            gesture = OverlayGesture.MOVE
+            pickedUp = true
+            applyPickedUpVisual()
+            emitFeedback(1)
+            listener?.onPickupStarted(startRawX, startRawY)
+            listener?.onPositionDragged(rawX, rawY)
         }
     }
 
@@ -519,57 +494,34 @@ class SpeedKnobView @JvmOverloads constructor(
         if (event.getPointerId(event.actionIndex) != activePointerId) return false
         handler.removeCallbacks(longPressRunnable)
 
-        val dx = lastX - startX
-        when (downFace) {
-            OverlayFace.KNOB -> finishKnobGesture(dx)
-            OverlayFace.GEAR -> finishGearGesture(dx)
-        }
-
-        listener?.onOverlayTouchEnded()
-        clearGestureState()
-        return true
-    }
-
-    private fun finishKnobGesture(dx: Float) {
-        if (gesture == OverlayGesture.FLIP && abs(dx) >= flipThreshold()) {
-            startFlip(OverlayFace.GEAR, -dx.sign)
-        } else {
-            restoreRotation()
-            if (gesture == OverlayGesture.UNDECIDED && !moved) {
-                performClick()
-            }
-        }
-    }
-
-    private fun finishGearGesture(dx: Float) {
-        when {
-            gesture == OverlayGesture.FLIP && abs(dx) >= flipThreshold() -> {
-                startFlip(OverlayFace.KNOB, -dx.sign)
-            }
-
-            gesture == OverlayGesture.MOVE -> {
+        when (gesture) {
+            OverlayGesture.MOVE -> {
                 pickedUp = false
                 applyPickedUpVisual()
                 emitFeedback(1)
                 listener?.onPositionPlaced()
             }
 
-            gesture == OverlayGesture.UNDECIDED && !moved -> {
-                performClick()
-            }
-
-            else -> restoreRotation()
+            OverlayGesture.MENU -> dismissGearHint()
+            OverlayGesture.UNDECIDED -> if (!moved) performClick()
+            else -> Unit
         }
+
+        animateStickToCenter()
+        listener?.onOverlayTouchEnded()
+        clearGestureState()
+        return true
     }
 
     private fun cancelGesture(): Boolean {
         handler.removeCallbacks(longPressRunnable)
+        dismissGearHint()
         if (gesture == OverlayGesture.MOVE) {
             pickedUp = false
             applyPickedUpVisual()
             listener?.onPositionPlaced()
         }
-        restoreRotation()
+        animateStickToCenter()
         listener?.onOverlayTouchEnded()
         clearGestureState()
         return true
@@ -579,55 +531,84 @@ class SpeedKnobView @JvmOverloads constructor(
         activePointerId = MotionEvent.INVALID_POINTER_ID
         gesture = OverlayGesture.UNDECIDED
         moved = false
+        longPressArmed = false
     }
 
-    private fun startFlip(targetFace: OverlayFace, direction: Float) {
-        if (targetFace == displayFace || isFlipping) {
-            restoreRotation()
+    private fun animateStickToCenter() {
+        stickReturnAnimator?.cancel()
+        if (abs(stickVisualOffsetY) < 0.5f) {
+            stickVisualOffsetY = 0f
+            invalidate()
             return
         }
-
-        isFlipping = true
-        if (targetFace == OverlayFace.GEAR) {
-            listener?.onFlipToGear()
-        } else {
-            listener?.onFlipToKnob()
+        stickReturnAnimator = ValueAnimator.ofFloat(stickVisualOffsetY, 0f).apply {
+            duration = STICK_RETURN_DURATION_MS
+            interpolator = DecelerateInterpolator()
+            addUpdateListener {
+                stickVisualOffsetY = it.animatedValue as Float
+                invalidate()
+            }
+            start()
         }
-        animate().cancel()
-        animate()
-            .rotationY(direction * 90f)
-            .setDuration(FLIP_HALF_DURATION_MS)
-            .setInterpolator(FLIP_INTERPOLATOR)
-            .setListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    displayFace = targetFace
-                    rotationY = -direction * 90f
-                    invalidate()
-                    animate()
-                        .rotationY(0f)
-                        .setDuration(FLIP_HALF_DURATION_MS)
-                        .setInterpolator(FLIP_INTERPOLATOR)
-                        .setListener(object : AnimatorListenerAdapter() {
-                            override fun onAnimationEnd(animation: Animator) {
-                                isFlipping = false
-                                animate().setListener(null)
-                                updateAccessibilityDescription()
-                            }
-                        })
-                        .start()
-                }
-            })
-            .start()
     }
 
-    private fun restoreRotation() {
-        animate().cancel()
-        animate()
-            .rotationY(0f)
-            .setDuration(110L)
-            .setInterpolator(DecelerateInterpolator())
-            .setListener(null)
-            .start()
+    private fun showGearHint() {
+        if (gearHintView != null) return
+        val size = (GEAR_HINT_SIZE_DP * density).roundToInt()
+        val displayWidth = resources.displayMetrics.widthPixels
+        val displayHeight = resources.displayMetrics.heightPixels
+        val x = (menuTargetRawX - size / 2f).roundToInt().coerceIn(0, (displayWidth - size).coerceAtLeast(0))
+        val y = (menuTargetRawY - size / 2f).roundToInt().coerceIn(0, (displayHeight - size).coerceAtLeast(0))
+
+        val hint = GearHintView(context).apply {
+            alpha = 0f
+            scaleX = 0.62f
+            scaleY = 0.62f
+            translationY = -menuDirection * 12f * density
+        }
+        val params = WindowManager.LayoutParams(
+            size,
+            size,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            android.graphics.PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            this.x = x
+            this.y = y
+            title = "Scroblin settings target"
+        }
+
+        try {
+            windowManager.addView(hint, params)
+            gearHintView = hint
+            gearHintParams = params
+            hint.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .translationY(0f)
+                .setDuration(GEAR_HINT_POP_DURATION_MS)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        } catch (_: RuntimeException) {
+            gearHintView = null
+            gearHintParams = null
+        }
+    }
+
+    private fun dismissGearHint() {
+        val hint = gearHintView ?: return
+        gearHintView = null
+        gearHintParams = null
+        try {
+            hint.animate().cancel()
+            windowManager.removeViewImmediate(hint)
+        } catch (_: RuntimeException) {
+            // Window may already have been removed with the accessibility overlay.
+        }
     }
 
     private fun animateRingTo(targetStep: Float) {
@@ -655,9 +636,7 @@ class SpeedKnobView @JvmOverloads constructor(
 
     private fun emitFeedback(count: Int) {
         repeat(count.coerceAtMost(MAX_FEEDBACK_BURST)) {
-            if (hapticEnabled) {
-                performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-            }
+            if (hapticEnabled) performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
         }
     }
 
@@ -678,9 +657,7 @@ class SpeedKnobView @JvmOverloads constructor(
             return
         }
         val percentage = (
-            logicalSpeedStep /
-                AutoScrollState.MAX_SPEED_STEP.toFloat() *
-                100f
+            logicalSpeedStep / AutoScrollState.MAX_SPEED_STEP.toFloat() * 100f
             ).roundToInt()
         val direction = when {
             logicalSpeedStep > 0 -> "scrolling down"
@@ -688,8 +665,7 @@ class SpeedKnobView @JvmOverloads constructor(
             else -> "stopped"
         }
         val status = if (paused) "paused" else "active"
-        val face = if (displayFace == OverlayFace.KNOB) "speed knob" else "settings gear"
-        contentDescription = "Auto-scroll $face, $percentage percent, $status, $direction"
+        contentDescription = "Auto-scroll analog stick, $percentage percent, $status, $direction"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             stateDescription = "$percentage percent, $status"
         }
@@ -701,31 +677,22 @@ class SpeedKnobView @JvmOverloads constructor(
             emitFeedback(1)
             return true
         }
-        when (displayFace) {
-            OverlayFace.KNOB -> {
-                val now = SystemClock.uptimeMillis()
-                emitFeedback(1)
-                when {
-                    paused -> {
-                        lastPausedResumeTapUptimeMs = now
-                        listener?.onResumeRequested()
-                    }
-
-                    now - lastPausedResumeTapUptimeMs <= DOUBLE_TAP_RESET_TIMEOUT_MS -> {
-                        lastPausedResumeTapUptimeMs = 0L
-                        listener?.onResetToZeroRequested()
-                    }
-
-                    else -> {
-                        lastPausedResumeTapUptimeMs = 0L
-                        listener?.onPauseRequested()
-                    }
-                }
+        val now = SystemClock.uptimeMillis()
+        emitFeedback(1)
+        when {
+            paused -> {
+                lastPausedResumeTapUptimeMs = now
+                listener?.onResumeRequested()
             }
 
-            OverlayFace.GEAR -> {
-                emitFeedback(1)
-                listener?.onGearTapped()
+            now - lastPausedResumeTapUptimeMs <= DOUBLE_TAP_RESET_TIMEOUT_MS -> {
+                lastPausedResumeTapUptimeMs = 0L
+                listener?.onResetToZeroRequested()
+            }
+
+            else -> {
+                lastPausedResumeTapUptimeMs = 0L
+                listener?.onPauseRequested()
             }
         }
         return true
@@ -733,12 +700,15 @@ class SpeedKnobView @JvmOverloads constructor(
 
     override fun onDetachedFromWindow() {
         ringAnimator?.cancel()
+        stickReturnAnimator?.cancel()
         colorPreviewAnimator?.cancel()
         handler.removeCallbacksAndMessages(null)
+        dismissGearHint()
         super.onDetachedFromWindow()
     }
 
-    private fun flipThreshold(): Float = min(flipThresholdMaximum, width * 0.52f)
+    private fun currentDesignScale(): Float =
+        width.coerceAtMost(height).toFloat().coerceAtLeast(1f) / DESIGN_SIZE
 
     private fun polar(radius: Float, angleDegrees: Float): Pair<Float, Float> {
         val radians = Math.toRadians(angleDegrees.toDouble())
@@ -760,39 +730,26 @@ class SpeedKnobView @JvmOverloads constructor(
         )
     }
 
-    private fun buildGearPath(): Path {
-        val points = mutableListOf<Pair<Float, Float>>()
-        val toothArc = 360f / GEAR_TEETH
-        repeat(GEAR_TEETH) { tooth ->
-            val centerAngle = START_ANGLE + tooth * toothArc
-            GEAR_TOOTH_PROFILE.forEach { (fraction, radius) ->
-                points += polar(radius, centerAngle + fraction * toothArc)
-            }
-        }
-        return Path().apply {
-            points.firstOrNull()?.let { moveTo(it.first, it.second) }
-            points.drop(1).forEach { lineTo(it.first, it.second) }
-            close()
-        }
-    }
-
     companion object {
         private const val DESIGN_SIZE = 140f
         private const val CENTER = 70f
         private const val RING_RADIUS = 46.5f
         private const val START_ANGLE = -90f
         private const val NOTCH_COUNT = 40
-        private const val GEAR_TEETH = 8
-        private const val HORIZONTAL_DOMINANCE = 1.25f
+        private const val STICK_CAP_RADIUS = 21.5f
+        private const val MAX_STICK_VISUAL_THROW = 20f
+        private const val TOP_EDGE_FRACTION = 0.20f
+        private const val MENU_DIRECTION_BIAS = 0.65f
         private const val LONG_PRESS_DURATION_MS = 430L
-        private const val FLIP_HALF_DURATION_MS = 150L
-        private const val RING_ANIMATION_DURATION_MS = 125L
-        private const val RESET_RING_ANIMATION_DURATION_MS = 460L
+        private const val GEAR_HINT_SIZE_DP = 44f
+        private const val GEAR_HINT_POP_DURATION_MS = 140L
+        private const val STICK_RETURN_DURATION_MS = 135L
+        private const val RING_ANIMATION_DURATION_MS = 95L
+        private const val RESET_RING_ANIMATION_DURATION_MS = 360L
         private const val COLOR_PREVIEW_OUT_DURATION_MS = 180L
         private const val DOUBLE_TAP_RESET_TIMEOUT_MS = 420L
         private const val MAX_FEEDBACK_BURST = 40
         private const val PICKED_UP_SCALE = 1.09f
-        // Hidden platform flag documented by MotionEvent as 0x800.
         private const val ACCESSIBILITY_EVENT_FLAG = 0x800
 
         private val TRACK_COLOR = Color.rgb(52, 59, 73)
@@ -800,16 +757,48 @@ class SpeedKnobView @JvmOverloads constructor(
         private val DEFAULT_POSITIVE_COLOR = Color.rgb(53, 185, 255)
         private val DEFAULT_NEGATIVE_COLOR = Color.rgb(255, 102, 93)
         private val NOTCH_COLOR = Color.rgb(18, 22, 30)
-        private val FLIP_INTERPOLATOR = PathInterpolator(0.2f, 0.86f, 0.24f, 1f)
-        private val GEAR_TOOTH_PROFILE = listOf(
-            -0.50f to 40.5f,
-            -0.38f to 40.5f,
-            -0.30f to 48.5f,
-            -0.20f to 61f,
-            0.20f to 61f,
-            0.30f to 48.5f,
-            0.38f to 40.5f,
-            0.50f to 40.5f,
-        )
+    }
+}
+
+/** A tiny non-touchable target shown during the long-press radial menu gesture. */
+private class GearHintView(context: Context) : View(context) {
+    private val bubblePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.rgb(37, 44, 55)
+        setShadowLayer(10f, 0f, 3f, Color.argb(110, 0, 0, 0))
+    }
+    private val gearPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 3.1f * resources.displayMetrics.density
+        strokeCap = Paint.Cap.ROUND
+        color = Color.rgb(210, 217, 226)
+    }
+    private val hubPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.rgb(210, 217, 226)
+    }
+
+    init {
+        setLayerType(LAYER_TYPE_SOFTWARE, null)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val cx = width / 2f
+        val cy = height / 2f
+        val radius = min(width, height) * 0.46f
+        canvas.drawCircle(cx, cy, radius, bubblePaint)
+
+        val gearRadius = radius * 0.48f
+        val toothInner = gearRadius * 0.80f
+        repeat(8) { index ->
+            val angle = Math.toRadians((index * 45.0) - 90.0)
+            val x1 = cx + cos(angle).toFloat() * toothInner
+            val y1 = cy + sin(angle).toFloat() * toothInner
+            val x2 = cx + cos(angle).toFloat() * gearRadius
+            val y2 = cy + sin(angle).toFloat() * gearRadius
+            canvas.drawLine(x1, y1, x2, y2, gearPaint)
+        }
+        canvas.drawCircle(cx, cy, gearRadius * 0.70f, gearPaint)
+        canvas.drawCircle(cx, cy, gearRadius * 0.20f, hubPaint)
     }
 }

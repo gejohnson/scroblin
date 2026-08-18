@@ -3,6 +3,7 @@ package com.scroblin.app.overlay
 enum class OverlayGesture {
     UNDECIDED,
     SPEED,
+    MENU,
     FLIP,
     MOVE,
     CANCELLED,
