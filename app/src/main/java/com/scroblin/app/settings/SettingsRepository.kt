@@ -17,7 +17,8 @@ data class AutoScrollSettings(
     val yFraction: Float = AutoScrollState.DEFAULT_Y_FRACTION,
 ) {
     companion object {
-        const val DEFAULT_PIXELS_PER_NOTCH = 0f
+        const val DEFAULT_MAX_WPM = 600f
+        const val DEFAULT_PIXELS_PER_NOTCH = DEFAULT_MAX_WPM
         const val DEFAULT_WIDGET_SIZE_DP = 70
         const val DEFAULT_WIDGET_OPACITY = 1f
         const val DEFAULT_COLOR_HUE = 199f
@@ -150,7 +151,7 @@ class SettingsRepository(context: Context) {
     }
 
     companion object {
-        const val KEY_PIXELS_PER_NOTCH = "pixels_per_notch"
+        const val KEY_PIXELS_PER_NOTCH = "experimental_max_wpm"
         const val KEY_MINIMUM_SPEED = "minimum_pixels_per_second"
         const val KEY_MAXIMUM_SPEED = "maximum_pixels_per_second"
         const val KEY_HAPTIC_ENABLED = "haptic_enabled"
@@ -166,8 +167,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_SPEED_MODEL_VERSION = "speed_model_version"
         private const val SINGLE_RING_SPEED_MODEL_VERSION = 2
 
-        val PIXELS_PER_NOTCH_RANGE = 0f..100f
-        const val PIXELS_PER_NOTCH_STEP = 5f
+        val PIXELS_PER_NOTCH_RANGE = 100f..1200f
+        const val PIXELS_PER_NOTCH_STEP = 50f
         private const val PREFERENCES_NAME = "auto_scroll_settings"
 
         private fun snapPixelsPerNotch(value: Float): Float =

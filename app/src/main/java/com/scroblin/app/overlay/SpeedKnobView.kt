@@ -186,7 +186,11 @@ class SpeedKnobView @JvmOverloads constructor(
     private var startingSpeedStep = 0
     private var moved = false
     private val moveSlop = 11f * density
-    private val speedTravelPerStep = 16f * density
+    private val speedTravelPerStep = min(
+        7f * density,
+        resources.displayMetrics.heightPixels * 0.32f /
+            (MAX_SPEED_STEP * 2f),
+    )
     private val flipThresholdMaximum = 48f * density
     private val longPressRunnable = Runnable {
         if (
