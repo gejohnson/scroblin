@@ -11,6 +11,8 @@ on:
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: read
 
 jobs:
   build:
@@ -64,3 +66,25 @@ jobs:
           name: scroblin-full-swipe-curved-knob-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Report successful push build on PR
+        if: success() && github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const { data: pulls } = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: 'open',
+              head: `${owner}:ui/full-swipe-curved-knob`,
+            });
+            if (pulls.length > 0) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pulls[0].number,
+                body: `Full-swipe curved-knob CI build succeeded. Run ID: ${context.runId}. Artifact: scroblin-full-swipe-curved-knob-debug`,
+              });
+            }
