@@ -23,6 +23,28 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Report push build start on PR
+        if: github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const { data: pulls } = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: 'open',
+              head: `${owner}:ui/full-swipe-curved-knob`,
+            });
+            if (pulls.length > 0) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pulls[0].number,
+                body: `Full-swipe curved-knob CI build started. Run ID: ${context.runId}`,
+              });
+            }
+
       - name: Apply experiment patch
         run: |
           python tools/apply_full_swipe_wpm_experiment.py
