@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - ui/analog-stick-control
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
